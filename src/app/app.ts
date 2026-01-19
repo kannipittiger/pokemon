@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { Pokeservice } from './../services/pokeservice';
-import { Component, inject, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { PokemonDetailModal } from '../pokemon-detail-modal/pokemon-detail-modal';
 
 export interface Pokemon {
   name: string;
@@ -13,50 +13,81 @@ export interface Pokemon {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule,PokemonDetailModal],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
-export class App {
-  poke = inject(Pokeservice);
-  protected readonly title = signal('pokemon');
+export class App implements OnInit {
+  private poke = inject(Pokeservice);
+
+  title = signal('pokemon');
   all_pokemon = signal<Pokemon[]>([]);
+  loading = signal(true);
+  error = signal<string | null>(null);
+  selectedPokemon = signal<Pokemon | null>(null);
 
   ngOnInit(): void {
     this.get_gen();
-    // this.get_pokemon('charmander');
   }
 
   get_gen() {
-    for (let index = 1; index <= 9; index++) {
-      this.poke.getGeneration(index).subscribe((res) => {
+    this.loading.set(true);
+    this.error.set(null);
 
-        res.pokemon_species.forEach((val: any) => {
-          this.poke.getPokemon(val.name).subscribe({
-            next: (res) => {
+    let completedRequests = 0;
+    const TOTAL_GEN = 9;
 
-              var poke_card: Pokemon = {
-                name: res.name,
-                url: val.url,
-                photo: res.sprites.front_default,
-                skills: res.abilities.map((m: any) => m.ability),
-              };
-              
-              this.all_pokemon.update((obj) => [...obj, poke_card]);
-            },
-            error: (err) => {
-              // console.error('getPokemon error', err);
-            },
+    for (let gen = 1; gen <= TOTAL_GEN; gen++) {
+      this.poke.getGeneration(gen).subscribe({
+        next: (genRes: any) => {
+          genRes.pokemon_species.forEach((val: any) => {
+            this.poke.getPokemon(val.name).subscribe({
+              next: (pokeRes: any) => {
+                const poke_card: Pokemon = {
+                  name: pokeRes.name,
+                  url: val.url,
+                  photo: pokeRes.sprites.front_default,
+                  skills: pokeRes.abilities.map((m: any) => m.ability),
+                };
+
+                this.all_pokemon.update((list) => [...list, poke_card]);
+              },
+              error: () => {
+                // this.error.set('Failed to load some Pokémon data.');
+              },
+            });
           });
-          
-        });
+        },
+        error: () => {
+          // this.error.set('Failed to load Pokémon generations.');
+        },
+        complete: () => {
+          completedRequests++;
+          if (completedRequests === TOTAL_GEN) {
+            this.loading.set(false);
+          }
+        },
       });
     }
   }
 
-  // get_pokemon(pokeName: string) {
-  //   this.poke.getPokemon(pokeName).subscribe((res) => {
-  //     console.log('POKEMON', res);
-  //   });
-  // }
+  isLoading() {
+    return this.loading();
+  }
+
+  errorMessage() {
+    return this.error();
+  }
+
+  chunkedPokemon() {
+    const size = 16;
+    const result: Pokemon[][] = [];
+
+    const list = this.all_pokemon();
+    for (let i = 0; i < list.length; i += size) {
+      result.push(list.slice(i, i + size));
+    }
+
+    return result;
+  }
 }
